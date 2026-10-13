@@ -1,0 +1,31 @@
+{
+  "format": "qq-group-overlap/v1",
+  "groups": [
+    {
+      "group_id": "10001",
+      "group_name": "校园摄影社",
+      "members": [
+        {"user_id": "100000001", "nickname": "小明", "card": "小明·风光", "role": "member"},
+        {"user_id": "100000002", "nickname": "小红", "card": "", "role": "member"},
+        {"user_id": "100000003", "nickname": "阿青", "card": "青山", "role": "member"}
+      ]
+    },
+    {
+      "group_id": "10002",
+      "group_name": "城市徒步群",
+      "members": [
+        {"user_id": "100000001", "nickname": "小明", "card": "明天去爬山", "role": "member"},
+        {"user_id": "100000003", "nickname": "阿青", "card": "", "role": "member"},
+        {"user_id": "100000004", "nickname": "大白", "card": "", "role": "member"}
+      ]
+    },
+    {
+      "group_id": "10003",
+      "group_name": "胶片相机交流",
+      "members": [
+        {"user_id": "100000001", "nickname": "小明", "card": "Ming", "role": "member"},
+        {"user_id": "100000005", "nickname": "星星", "card": "", "role": "member"}
+      ]
+    }
+  ]
+}
