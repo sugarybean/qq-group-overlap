@@ -30,7 +30,7 @@ sandbox_args=(
   --proc /proc
   --bind /tmp /tmp
   --bind "$project_root" /mnt
-  --bind "$isolated_home" /home/sugarybean
+  --bind "$isolated_home" /home/qq
   --chdir /mnt/runtime/data
 )
 if [[ -d "$user_runtime_dir" ]]; then
@@ -56,6 +56,6 @@ exec bwrap "${sandbox_args[@]}" \
   LD_LIBRARY_PATH="$app_mount/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
   XDG_DATA_DIRS="$app_mount/usr/share:/usr/share/gnome:/usr/local/share:/usr/share" \
   GSETTINGS_SCHEMA_DIR="$app_mount/usr/share/glib-2.0/schemas" \
-  XDG_CONFIG_HOME="/home/sugarybean/.config" \
+  XDG_CONFIG_HOME="/home/qq/.config" \
   /mnt/runtime/napcat/squashfs-root/qq \
   --no-sandbox

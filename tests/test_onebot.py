@@ -27,12 +27,12 @@ class OneBotTests(unittest.TestCase):
             {
                 "status": "ok",
                 "retcode": 0,
-                "data": {"user_id": 3207569295, "nickname": "测试账号"},
+                "data": {"user_id": 100000001, "nickname": "测试账号"},
             }
         )
         client = OneBotClient("http://127.0.0.1:3000")
         with patch("urllib.request.urlopen", return_value=response):
-            self.assertEqual(client.get_login_user_id(), "3207569295")
+            self.assertEqual(client.get_login_user_id(), "100000001")
 
     def test_lists_groups_in_a_stable_human_friendly_order(self) -> None:
         response = FakeResponse(

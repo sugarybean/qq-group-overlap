@@ -24,7 +24,7 @@ Windows 用户需要先安装并配置 NapCat（OneBot 11），完整图文教�
 
 1. 在左上角输入群名或群号，例如“自动化”。
 2. 单击选择一个群；按住 `Ctrl` 增减选择，按住 `Shift` 连续选择一段。所有已选群地位相同。
-3. 首次做等级加权前，点“只刷新已选群等级”。NapCat 必须已启动且 QQ 已登录。
+3. 首次做等级打分前，点“只刷新已选群等级”。NapCat 必须已启动且 QQ 已登录。
 4. 选择预设算法，或直接修改评分公式。
 5. 点“开始评价”。结果没有人数上限，界面分页显示，并可完整导出 CSV。
 
@@ -49,7 +49,7 @@ Jaccard 越高，两个群的成员结构越相似。“交集占群 A”更适�
 ## 先用示例看效果
 
 ```bash
-cd /home/sugarybean/文档/ChatGPT/myprogram/qq-group-overlap
+cd qq-group-overlap
 PYTHONPATH=src python3 -m qq_group_overlap analyze \
   examples/members.example.json -o report
 ```
@@ -140,10 +140,10 @@ Token 只从环境变量读取，不会写入快照。`*.private.json`、`snapsh
 本地 NapCat 启动入口是：
 
 ```bash
-
+./scripts/start-napcat.sh
 ```
 
-本机 WebUI 地址是 `http://127.0.0.1:6099/webui/`，面板密钥是 `qq-overlap-local`。这是 NapCat 本机面板的登录密钥，不是 QQ 密码。
+本机 WebUI 地址是 `http://127.0.0.1:6099/webui/`，面板密钥在 NapCat 配置里自行设置。这是 NapCat 本机面板的登录密钥，不是 QQ 密码。
 
 > **Windows 用户**：上述 `run-live-report.sh` 是 Linux 脚本。Windows 下请改用 GUI（`scripts\start-gui.bat`），或直接运行 `python -m qq_group_overlap live`。NapCat 的安装与连接方式见 [docs/windows-setup.html](docs/windows-setup.html)。
 
