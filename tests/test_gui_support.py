@@ -22,6 +22,7 @@ def ranked_person(user_id: str, name: str) -> WeightedOverlap:
         shared_group_ids=("a", "b"),
         shared_group_names=("A", "B"),
         levels=(("A", 3), ("B", None)),
+        level_aliases=(("A", "张三"), ("B", "")),
         known_level_count=1,
     )
 
@@ -43,6 +44,19 @@ class GuiSupportTests(unittest.TestCase):
 
     def test_formats_missing_levels_explicitly(self) -> None:
         self.assertEqual(format_level_summary((("A", 3), ("B", None))), "A:L3 / B:缺失")
+
+    def test_format_level_summary_includes_aliases(self) -> None:
+        levels = (("A", 3), ("B", None))
+        aliases = (("A", "张三"), ("B", "李四"))
+        self.assertEqual(
+            format_level_summary(levels, aliases),
+            "A:L3（张三） / B:缺失（李四）",
+        )
+
+    def test_format_level_summary_omits_empty_alias(self) -> None:
+        levels = (("A", 3),)
+        aliases = (("A", ""),)
+        self.assertEqual(format_level_summary(levels, aliases), "A:L3")
 
     def test_export_never_writes_beyond_the_requested_top_n(self) -> None:
         rows = [

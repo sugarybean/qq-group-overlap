@@ -145,6 +145,62 @@ class WeightedScoreTests(unittest.TestCase):
         self.assertEqual(summaries[0].level_count, 1)
         self.assertAlmostEqual(summaries[0].level_coverage, 0.5)
 
+    def test_required_groups_filter_out_people_not_in_them(self) -> None:
+        rows = [
+            Membership("a", "A 群", "1", "甲"),
+            Membership("b", "B 群", "1", "甲"),
+            Membership("a", "A 群", "2", "乙"),
+            Membership("c", "C 群", "2", "乙"),
+            Membership("b", "B 群", "3", "丙"),
+            Membership("c", "C 群", "3", "丙"),
+        ]
+
+        ranked = rank_selected_groups(
+            rows,
+            selected_group_ids={"a", "b", "c"},
+            min_groups=2,
+            required_group_ids={"a"},
+        )
+
+        self.assertEqual({person.user_id for person in ranked}, {"1", "2"})
+
+    def test_required_groups_subset_of_selected_groups(self) -> None:
+        rows = [Membership("a", "A 群", "1", "甲"), Membership("b", "B 群", "1", "甲")]
+        with self.assertRaisesRegex(ValueError, "特别关照"):
+            rank_selected_groups(
+                rows,
+                selected_group_ids={"a", "b"},
+                required_group_ids={"x"},
+            )
+
+    def test_empty_required_groups_keeps_everyone(self) -> None:
+        rows = [
+            Membership("a", "A 群", "1", "甲"),
+            Membership("b", "B 群", "1", "甲"),
+            Membership("a", "A 群", "2", "乙"),
+            Membership("b", "B 群", "2", "乙"),
+        ]
+        ranked = rank_selected_groups(
+            rows,
+            selected_group_ids={"a", "b"},
+            required_group_ids=set(),
+        )
+        self.assertEqual({p.user_id for p in ranked}, {"1", "2"})
+
+    def test_level_aliases_filled_with_card_first_then_nickname(self) -> None:
+        rows = [
+            Membership("a", "A 群", "1", "甲", card="小甲"),
+            Membership("b", "B 群", "1", "甲", card=""),
+        ]
+        ranked = rank_selected_groups(
+            rows,
+            selected_group_ids={"a", "b"},
+        )
+        person = ranked[0]
+        aliases = dict(person.level_aliases)
+        self.assertEqual(aliases["A 群"], "小甲")  # card 优先
+        self.assertEqual(aliases["B 群"], "甲")  # 无 card 回退 nickname
+
 
 if __name__ == "__main__":
     unittest.main()

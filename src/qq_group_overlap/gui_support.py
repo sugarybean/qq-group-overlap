@@ -24,11 +24,20 @@ def filter_group_summaries(
     ]
 
 
-def format_level_summary(levels: tuple[tuple[str, int | None], ...]) -> str:
-    return " / ".join(
-        f"{group_name}:L{level}" if level is not None else f"{group_name}:缺失"
-        for group_name, level in levels
-    )
+def format_level_summary(
+    levels: tuple[tuple[str, int | None], ...],
+    aliases: tuple[tuple[str, str], ...] | None = None,
+) -> str:
+    alias_map = dict(aliases or ())
+    parts = []
+    for group_name, level in levels:
+        alias = alias_map.get(group_name, "")
+        suffix = f"（{alias}）" if alias else ""
+        if level is not None:
+            parts.append(f"{group_name}:L{level}{suffix}")
+        else:
+            parts.append(f"{group_name}:缺失{suffix}")
+    return " / ".join(parts)
 
 
 def update_group_selection(
@@ -76,7 +85,7 @@ def write_top_csv(
                     f"{person.score:.3f}",
                     person.shared_group_count,
                     f"{person.known_level_count}/{person.shared_group_count}",
-                    format_level_summary(person.levels),
+                    format_level_summary(person.levels, person.level_aliases),
                 ]
             )
     return target

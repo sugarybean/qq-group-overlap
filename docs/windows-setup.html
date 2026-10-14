@@ -149,11 +149,6 @@
   <div class="step"><div class="num">3</div><div class="body"><strong>连接方式</strong> —— 本工具用的是 <strong>HTTP POST</strong>（不是 WebSocket）。所以教程的核心，就是让 NapCat 在 <code>127.0.0.1:3000</code> 开一个 OneBot HTTP 服务，本工具带着 token 去访问它。</div></div>
 </div>
 
-<div class="warn">
-  <span class="label">重要提示：务必用「小号」</span>
-  NapCat 基于非官方协议，登录的 QQ 账号存在被腾讯风控甚至封号的风险。<strong>强烈建议用一个小号（专门准备一个 QQ）来跑，不要用你的主号。</strong> 小号登录、加群即可，正常使用。
-</div>
-
 <h2 id="step1">一、安装 Python</h2>
 <p>本工具用 Python 编写，且只用标准库，无需额外依赖。</p>
 <ol>
@@ -183,7 +178,7 @@
 <h2 id="step3">三、扫码登录 QQ</h2>
 <ol>
   <li>在 <code>NapCat.XXXX.Shell</code> 目录里，双击 <code>napcat.bat</code>（一键包也可能是 <code>bootmain.exe</code> 或 <code>NapCatWinBootMain.exe</code>）。</li>
-  <li>启动后，控制台会弹出一个二维码（或自动拉起 QQ 登录窗口）。用你准备的小号手机 QQ 扫码登录。</li>
+  <li>启动后，控制台会弹出一个二维码（或自动拉起 QQ 登录窗口）。用你的手机 QQ 扫码登录。</li>
   <li>登录成功后，日志里会出现类似这样的一行：</li>
 </ol>
 <pre><code><span class="c">[WebUi] WebUi User Panel Url: http://127.0.0.1:6099/webui?token=XXXX</span></code></pre>
@@ -283,7 +278,7 @@ python -m qq_group_overlap live</code></pre>
 <p>说明 Python 没装好或没加入 PATH。回到 <a href="#step1">第一步</a> 重装，安装时勾选 <code>Add Python to PATH</code>，装完重开命令行。</p>
 
 <h3>4. 二维码扫不出来 / 登录不上</h3>
-<p>NapCat 偶尔会因 QQ 版本或网络问题登不上。可以：换扫码方式、稍等重试、更新到最新版 NapCat、或改用 Shell 版配合已安装的最新 QQ。小号建议先正常养几天再跑。</p>
+<p>NapCat 偶尔会因 QQ 版本或网络问题登不上。可以：换扫码方式、稍等重试、更新到最新版 NapCat、或改用 Shell 版配合已安装的最新 QQ。</p>
 
 <h3>5. 群成员的「等级」显示缺失</h3>
 <p>这是正常的。旧快照或某些群没有等级数据，工具会明确显示「缺失」而不是悄悄填 0。点「只刷新已选群等级」后，有等级的群会补上。</p>

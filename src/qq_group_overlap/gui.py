@@ -62,6 +62,8 @@ class OverlapApp(ttk.Frame):
         self.page_index = 0
         self.busy = False
         self.updating_group_tree = False
+        self.special_group_ids: set[str] = set()
+        self.marking_special = False
 
         self.search_var = tk.StringVar()
         self.selection_var = tk.StringVar(value="已选择 0 个群")
@@ -82,7 +84,7 @@ class OverlapApp(ttk.Frame):
 
     def _configure_window(self) -> None:
         self.master.title("QQ 群同好线索")
-        self.master.geometry("1220x760")
+        self.master.geometry("1320x760")
         self.master.minsize(980, 640)
         self.master.configure(background=PAPER)
         self.pack(fill="both", expand=True)
@@ -145,7 +147,10 @@ class OverlapApp(ttk.Frame):
         ttk.Label(parent, text="1  搜索并选群", style="Section.TLabel").pack(anchor="w")
         ttk.Label(
             parent,
-            text="例如搜“自动化”。单击选一个群；按住 Ctrl 增减，Shift 连选一段。",
+            text=(
+                "例如搜“自动化”。单击选一个群；按住 Ctrl 增减，Shift 连选一段。\n"
+                "按住 Ctrl+X 时点选的群会标为「特别关照」（★），结果必须包含它们。"
+            ),
             style="Hint.TLabel",
             wraplength=370,
             justify="left",
@@ -190,6 +195,7 @@ class OverlapApp(ttk.Frame):
         self.group_tree.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
         self.group_tree.tag_configure("chosen", background=ACCENT_SOFT, foreground="#084E48")
+        self.group_tree.tag_configure("special", background=WARNING, foreground="#FFFFFF")
         self.group_tree.bind("<<TreeviewSelect>>", self._group_selection_changed)
         self.group_tree.bind("<Control-a>", self._select_all_visible)
         self.group_tree.bind("<Control-A>", self._select_all_visible)
@@ -291,7 +297,7 @@ class OverlapApp(ttk.Frame):
             "coverage": "等级覆盖",
             "levels": "等级明细",
         }
-        widths = {"rank": 42, "name": 130, "qq": 100, "groups": 68, "score": 78, "coverage": 82, "levels": 340}
+        widths = {"rank": 42, "name": 110, "qq": 88, "groups": 60, "score": 72, "coverage": 78, "levels": 520}
         for column in columns:
             self.result_tree.heading(column, text=headings[column])
             self.result_tree.column(
@@ -345,6 +351,11 @@ class OverlapApp(ttk.Frame):
         self.master.bind("<Control-f>", lambda _event: self.search_entry.focus_set())
         self.master.bind("<Control-F>", lambda _event: self.search_entry.focus_set())
         self.master.bind("<Return>", lambda _event: self._evaluate())
+        self.master.bind("<Control-x>", self._special_mark_on)
+        self.master.bind("<Control-X>", self._special_mark_on)
+        self.master.bind("<Control-KeyRelease-x>", self._special_mark_off)
+        self.master.bind("<Control-KeyRelease-X>", self._special_mark_off)
+        self.master.bind("<FocusOut>", self._special_mark_off)
 
     def _load_snapshot(self) -> None:
         try:
@@ -378,13 +389,18 @@ class OverlapApp(ttk.Frame):
             self.group_tree.delete(*self.group_tree.get_children())
             for group in filter_group_summaries(self.groups, self.search_var.get()):
                 chosen = group.group_id in self.selected_group_ids
+                special = group.group_id in self.special_group_ids
                 coverage = f"{group.level_coverage:.0%}" if group.level_count else "缺失"
+                if special:
+                    mark, tags = "★", ("special",)
+                else:
+                    mark, tags = ("✓" if chosen else ""), (("chosen",) if chosen else ())
                 self.group_tree.insert(
                     "",
                     "end",
                     iid=group.group_id,
-                    values=("✓" if chosen else "", group.group_name, group.group_id, group.member_count, coverage),
-                    tags=("chosen",) if chosen else (),
+                    values=(mark, group.group_name, group.group_id, group.member_count, coverage),
+                    tags=tags,
                 )
             visible_selected = tuple(
                 group_id
@@ -412,6 +428,14 @@ class OverlapApp(ttk.Frame):
         if updated_selection == self.selected_group_ids:
             self._paint_group_selection()
             return
+        # 标记模式下：本次新增选中的群，一并记入「特别关照」
+        if self.marking_special:
+            added = updated_selection - self.selected_group_ids
+            self.special_group_ids |= added
+        # 普通选择里被移除的群，也要从「特别关照」里清掉，避免残留
+        removed = self.selected_group_ids - updated_selection
+        if removed:
+            self.special_group_ids -= removed
         self.selected_group_ids = updated_selection
         self._paint_group_selection()
         self.ranked = []
@@ -424,12 +448,15 @@ class OverlapApp(ttk.Frame):
     def _paint_group_selection(self) -> None:
         for group_id in self.group_tree.get_children():
             values = list(self.group_tree.item(group_id, "values"))
-            values[0] = "✓" if group_id in self.selected_group_ids else ""
-            self.group_tree.item(
-                group_id,
-                values=values,
-                tags=("chosen",) if group_id in self.selected_group_ids else (),
-            )
+            chosen = group_id in self.selected_group_ids
+            special = group_id in self.special_group_ids
+            if special:
+                values[0] = "★"
+                tags = ("special",)
+            else:
+                values[0] = "✓" if chosen else ""
+                tags = ("chosen",) if chosen else ()
+            self.group_tree.item(group_id, values=values, tags=tags)
 
     def _select_all_visible(self, _event: tk.Event | None = None) -> str:
         visible = self.group_tree.get_children()
@@ -438,8 +465,39 @@ class OverlapApp(ttk.Frame):
             self._group_selection_changed()
         return "break"
 
+    def _special_mark_on(self, _event: tk.Event | None = None) -> str:
+        if self.marking_special:
+            return "break"
+        self.marking_special = True
+        self._paint_group_selection()
+        self._set_status(
+            "按住 Ctrl+X 期间点选的群将标记为「特别关照」（结果必须包含它们）。松开 Ctrl+X 结束。"
+        )
+        return "break"
+
+    def _special_mark_off(self, _event: tk.Event | None = None) -> str:
+        if not self.marking_special:
+            return "break"
+        self.marking_special = False
+        self._paint_group_selection()
+        self._update_selection_labels()
+        if self.special_group_ids:
+            names = {
+                group.group_id: group.group_name for group in self.groups
+            }
+            preview = "、".join(
+                names.get(gid, gid) for gid in sorted(self.special_group_ids)
+            )
+            self._set_status(
+                f"特别关照：{preview}。结果将只保留同时属于这些群的人。"
+            )
+        else:
+            self._set_status("未标记特别关照群。")
+        return "break"
+
     def _clear_selection(self) -> None:
         self.selected_group_ids.clear()
+        self.special_group_ids.clear()
         self.ranked = []
         self.page_index = 0
         self._render_results([])
@@ -460,9 +518,14 @@ class OverlapApp(ttk.Frame):
         preview = "、".join(selected_names[:3])
         if len(selected_names) > 3:
             preview += f" 等 {len(selected_names)} 个"
-        self.selection_var.set(
-            f"已选择 {len(selected_names)} 个群" + (f"：{preview}" if preview else "")
-        )
+        label = f"已选择 {len(selected_names)} 个群" + (f"：{preview}" if preview else "")
+        if self.special_group_ids:
+            special_names = [
+                names.get(group_id, group_id)
+                for group_id in sorted(self.special_group_ids)
+            ]
+            label += f"；特别关照 {len(special_names)} 个：{'、'.join(special_names[:3])}"
+        self.selection_var.set(label)
 
     def _validated_min_groups(self) -> int:
         selected_count = len(self.selected_group_ids)
@@ -497,6 +560,7 @@ class OverlapApp(ttk.Frame):
                 min_groups=min_groups,
                 excluded_users=self.excluded_users,
                 score_formula=formula,
+                required_group_ids=self.special_group_ids,
             )
         except ValueError as exc:
             messagebox.showinfo("无法开始评价", str(exc), parent=self.master)
@@ -549,7 +613,7 @@ class OverlapApp(ttk.Frame):
                     person.shared_group_count,
                     f"{person.score:.3f}",
                     f"{person.known_level_count}/{person.shared_group_count}",
-                    format_level_summary(person.levels),
+                    format_level_summary(person.levels, person.level_aliases),
                 ),
             )
 

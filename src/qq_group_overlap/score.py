@@ -57,6 +57,7 @@ class WeightedOverlap:
     shared_group_ids: tuple[str, ...]
     shared_group_names: tuple[str, ...]
     levels: tuple[tuple[str, int | None], ...]
+    level_aliases: tuple[tuple[str, str], ...]
     known_level_count: int
 
     @property
@@ -198,12 +199,16 @@ def rank_selected_groups(
     excluded_users: set[str] | None = None,
     include_bots: bool = False,
     score_formula: str = DEFAULT_SCORE_FORMULA,
+    required_group_ids: set[str] | None = None,
 ) -> list[WeightedOverlap]:
     selected_group_ids = set(selected_group_ids)
+    required_group_ids = set(required_group_ids or ())
     if len(selected_group_ids) < 2:
         raise ValueError("至少选择 2 个群")
     if not 2 <= min_groups <= len(selected_group_ids):
         raise ValueError(f"最少共同群应在 2–{len(selected_group_ids)} 之间")
+    if not required_group_ids.issubset(selected_group_ids):
+        raise ValueError("特别关照群必须是已选择的群")
 
     evaluate_score = compile_score_formula(score_formula)
     result = analyze_memberships(
@@ -219,6 +224,8 @@ def rank_selected_groups(
 
     ranked: list[WeightedOverlap] = []
     for person in result.people:
+        if not required_group_ids.issubset(person.group_ids):
+            continue
         rows = sorted(
             rows_by_user[person.user_id],
             key=lambda row: (row.group_name.casefold(), row.group_id),
@@ -231,6 +238,9 @@ def rank_selected_groups(
                 shared_group_ids=tuple(row.group_id for row in rows),
                 shared_group_names=tuple(row.group_name for row in rows),
                 levels=tuple((row.group_name, row.level) for row in rows),
+                level_aliases=tuple(
+                    (row.group_name, row.alias) for row in rows
+                ),
                 known_level_count=sum(row.level is not None for row in rows),
             )
         )
