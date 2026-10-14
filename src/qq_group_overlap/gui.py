@@ -364,7 +364,14 @@ class OverlapApp(ttk.Frame):
         except InputError as exc:
             self.memberships = []
             self.groups = []
-            self._set_status(str(exc), kind="error")
+            # First launch: no snapshot yet. Guide the user instead of showing
+            # a raw "file not found" error that looks like the app is broken.
+            if not self.snapshot_path.exists():
+                self._set_status(
+                    "还没有成员快照。先选择要分析的群，再点“只刷新已选群等级”从 NapCat 拉取成员。"
+                )
+            else:
+                self._set_status(str(exc), kind="error")
             return
         available = {group.group_id for group in self.groups}
         self.selected_group_ids &= available

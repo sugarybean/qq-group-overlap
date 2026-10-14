@@ -7,7 +7,7 @@
 ## 目录
 
 - [它能做什么](#它能做什么)
-- [Windows 用户：安装与连接 NapCat（必读）](#windows-用户安装与连接-napcat必读)
+- [安装与连接 NapCat（必读）](#安装与连接-napcat必读)
 - [每次使用前：确认 NapCat 还在运行](#每次使用前确认-napcat-还在运行)
 - [启动 GUI](#启动-gui)
 - [GUI 使用步骤](#gui-使用步骤)
@@ -26,43 +26,69 @@
 - 结果分页显示、可完整导出 CSV，也可生成脱敏（打码）报告用于分享。
 - 本地 GUI 一键操作，无需写代码；核心逻辑只用 Python 标准库，无第三方依赖。
 
-## Windows 用户：安装与连接 NapCat（必读）
+## 安装与连接 NapCat（必读）
 
-本工具通过 **NapCat（OneBot 11 协议）** 读取你所在 QQ 群的成员名单。Windows 用户需要先装好 NapCat、扫码登录 QQ、开启 OneBot HTTP 服务，才能连上本工具。全程 5 步。
-
-> Linux / macOS 用户：NapCat 一键安装步骤略有不同，但「扫码登录」「开启 OneBot 11 HTTP 服务」「设置 token」三步是通用的，可对照下面第四节执行。
+本工具通过 **NapCat（OneBot 11 协议）** 读取你所在 QQ 群的成员名单。用之前需要先装好 NapCat、扫码登录 QQ、开启 OneBot HTTP 服务。下面按 Windows / Linux / macOS 分平台说明，全程 5 步。官方仓库是 [NapNeko/NapCatQQ](https://github.com/NapNeko/NapCatQQ)，文档见 <https://doc.napneko.icu/>。
 
 ### 第一步：安装 Python
 
-本工具用 Python 编写，只用标准库，无需额外依赖。
+本工具用 Python 编写，只用标准库，无需额外依赖。需要 **Python 3.11 或更新版本**。
 
-1. 打开 Python 官网下载页：<https://www.python.org/downloads/windows/>
-2. 下载 **Python 3.11 或更新版本**的 64 位安装包（例如 `python-3.12.x-amd64.exe`）。
-3. 运行安装包，**务必勾选** `Add Python to PATH`，再点 `Install Now`。
-4. 安装完成后按 `Win + R`，输入 `cmd` 回车，验证：
+- **Windows**：打开 <https://www.python.org/downloads/windows/>，下载 64 位安装包（如 `python-3.12.x-amd64.exe`），运行后**务必勾选 `Add Python to PATH`** 再点 `Install Now`。
+- **Linux / macOS**：一般系统已自带 Python 3，无需额外安装。
 
-```bat
+安装后在命令行验证：
+
+```bash
 python --version
 ```
 
-看到类似 `Python 3.12.x` 即成功。
+看到 `Python 3.11.x` 或更高版本即成功（Linux/macOS 若 `python` 不存在，试 `python3 --version`）。
 
 ### 第二步：下载并安装 NapCat
 
-NapCat 的官方仓库是 [NapNeko/NapCatQQ](https://github.com/NapNeko/NapCatQQ)。Windows 下推荐用官方一键安装包。
+#### Windows
+
+推荐官方一键安装包（无需预先装 QQ）：
 
 1. 打开 Releases 页面：<https://github.com/NapNeko/NapCatQQ/releases>
-2. 找到 **Windows 一键安装包**（名称通常带 `OneKey` 字样，如 `NapCat.Shell.Windows.OneKey.zip`），下载并解压。
-3. 解压后双击 `NapCatInstaller.exe`，等待自动完成配置。
-4. 完成后目录里会生成一个 `NapCat.XXXX.Shell` 之类的目录，进入它。
+2. 下载 **`NapCat.Shell.Windows.OneKey.zip`**，解压。
+3. 双击 `NapCatInstaller.exe`，等待自动完成配置。
+4. 完成后进入生成的 `NapCat.XXXX.Shell` 目录。
 
-> **两种安装方式怎么选**：一键包（OneKey）适合新手，自动下载并配置 QQ 客户端环境，最省事；Shell 版需要你电脑已装新版 NTQQ（腾讯 QQ），NapCat 去调用它。
+> 一键包适合新手。如果你电脑已装新版 NTQQ（腾讯 QQ），也可改用 **Shell 版**（`NapCat.Shell.zip`），让 NapCat 去调用已装的 QQ。
+
+#### Linux
+
+官方一键安装脚本，支持基于 apt / dnf 的 amd64、arm64 系统，安装到当前用户的 `~/Napcat`：
+
+```bash
+curl -fL --connect-timeout 20 --max-time 1800 \
+  -o napcat.sh https://raw.githubusercontent.com/NapNeko/NapCat-Installer/main/script/install.sh &&
+bash napcat.sh --docker n --cli y --github-proxy 0
+```
+
+装完后用 `napcat` 命令管理服务。命令行不可用时，把上面的 `--cli y` 换成 `--tui` 走交互界面。国内网络下载慢，可给 `--github-proxy` 传 GitHub 加速地址。
+
+#### macOS
+
+支持 macOS 12+（Intel 和 Apple Silicon）：
+
+1. 先把腾讯 QQ 装到 `/Applications/QQ.app`。
+2. 下载并打开 [NapCat-Mac-Installer](https://github.com/NapNeko/NapCat-Mac-Installer/releases/latest)，按提示选择下载方式并安装。
+3. 按提示授权修改 QQ 入口，切换到 NapCat 后启动。
+
+FFmpeg 已随 NapCat 提供，无需另装。
 
 ### 第三步：扫码登录 QQ
 
-1. 在 `NapCat.XXXX.Shell` 目录里，双击 `napcat.bat`（一键包也可能是 `bootmain.exe` / `NapCatWinBootMain.exe`）。
-2. 启动后控制台会弹出二维码（或自动拉起 QQ 登录窗口），用手机 QQ 扫码登录。
-3. 登录成功后，日志里会出现类似一行：
+按你的平台启动 NapCat：
+
+- **Windows**：在 `NapCat.XXXX.Shell` 目录里双击 `napcat.bat`。
+- **Linux**：终端运行 `napcat`（或按安装脚本提示的启动方式）。
+- **macOS**：按安装器提示启动 NapCat。
+
+启动后，控制台会弹出二维码（或自动拉起 QQ 登录窗口），用手机 QQ 扫码登录。登录成功后，日志里会出现类似一行：
 
 ```text
 [WebUi] WebUi User Panel Url: http://127.0.0.1:6099/webui?token=XXXX
@@ -93,7 +119,9 @@ NapCat 的官方仓库是 [NapNeko/NapCatQQ](https://github.com/NapNeko/NapCatQQ
 
 ### 第五步：连接本工具并启动 GUI
 
-连接靠环境变量 `ONEBOT_ACCESS_TOKEN`，把你在第四步设置的 token 填进去。打开命令行（`cmd`）进入项目目录：
+连接靠环境变量 `ONEBOT_ACCESS_TOKEN`，把你在第四步设置的 token 填进去。
+
+**Windows**（打开 `cmd` 进入项目目录）：
 
 ```bat
 cd /d C:\你的路径\qq-group-overlap
@@ -101,12 +129,23 @@ set ONEBOT_ACCESS_TOKEN=你的token
 scripts\start-gui.bat
 ```
 
-也可以一劳永逸地设进系统环境变量：`Win + R` → 输入 `sysdm.cpl` 回车 →「高级」→「环境变量」→ 在「用户变量」里新建，变量名 `ONEBOT_ACCESS_TOKEN`，值填你的 token。设好后重开命令行生效。
+**Linux / macOS**（打开终端进入项目目录）：
+
+```bash
+cd /你的路径/qq-group-overlap
+export ONEBOT_ACCESS_TOKEN=你的token
+./scripts/start-gui.sh
+```
+
+也可以一劳永逸地把 `ONEBOT_ACCESS_TOKEN` 设进系统环境变量（Windows：`Win + R` → `sysdm.cpl` →「高级」→「环境变量」→ 用户变量新建；Linux/macOS：写进 `~/.bashrc` 或 `~/.zshrc` 里的 `export ONEBOT_ACCESS_TOKEN=你的token`）。设好后重开终端生效。
 
 > **如果你改了端口**（例如从 3000 改成了 3001），启动本工具时要加 `--api` 指向新地址：
 >
-> ```bat
+> ```bash
+> # Windows
 > scripts\start-gui.bat --api http://127.0.0.1:3001
+> # Linux / macOS
+> ./scripts/start-gui.sh --api http://127.0.0.1:3001
 > ```
 >
 > 命令行同理：`python -m qq_group_overlap live --api http://127.0.0.1:3001`。
@@ -117,7 +156,7 @@ scripts\start-gui.bat
 
 NapCat 不是「装一次就能一直用」——它是常驻程序，**必须保持运行**，本工具才能连上它。以下几种情况它可能已经不在了：
 
-- 电脑重启后，NapCat 不会自动启动，需要重新运行 `napcat.bat` 并确认 QQ 已在线。
+- 电脑重启后，NapCat 不会自动启动，需要重新启动它（Windows 双击 `napcat.bat`，Linux 运行 `napcat`，macOS 按安装器提示）并确认 QQ 已在线。
 - 你手动关掉了 NapCat 的窗口或进程。
 - QQ 掉线 / 被挤下线，NapCat 虽然还开着，但已经拉不到成员了。
 
@@ -174,6 +213,37 @@ scripts\start-gui.bat
 Jaccard 越高，两个群的成员结构越相似。「交集占群 A」更适合看一个小群是否几乎被另一个大群包含。
 
 ## 常见问题
+
+### 报错「HTTP Error 502: Bad Gateway」，但 NapCat 明明开着
+
+如果你的终端设了全局代理（`http_proxy` / `https_proxy` 环境变量，或系统代理），发往 `127.0.0.1` 的本机请求可能被代理劫走，代理连不上 NapCat 就返回 502。本工具的 HTTP 客户端**已内置忽略代理、直连本机**的逻辑，正常不会触发此问题；若你用的是旧版本，或确认仍出现 502，请检查并临时清掉当前终端的代理变量再试：
+
+```bash
+# Linux / macOS：当前终端临时取消代理
+unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
+```
+
+```bat
+:: Windows cmd：当前窗口临时取消代理
+set http_proxy=
+set https_proxy=
+```
+
+### 提示「找不到输入文件：…/members.private.json」
+
+这是**正常现象**，不是程序坏了。`members.private.json` 是成员快照（默认路径 `runtime/data/members.private.json`），记录从 NapCat 拉到的群成员——它**不在仓库里**（`runtime/` 已被 `.gitignore` 排除），所以首次使用必然不存在。
+
+生成它，任选一种：
+
+- 打开 GUI → 选好群 → 点「只刷新已选群等级」（会自动写入快照）
+- 命令行 `live`：`python -m qq_group_overlap live`（列出群、选序号、自动生成）
+- 命令行 `fetch`：`python -m qq_group_overlap fetch --groups 群号1,群号2 -o 快照.json`
+
+想先看看效果，可用内置示例数据（无需 NapCat）：
+
+```bash
+python -m qq_group_overlap analyze examples/members.example.json -o report
+```
 
 ### 点「只刷新已选群等级」报错「无法连接 NapCat」
 
@@ -250,19 +320,32 @@ group_id,group_name,user_id,nickname,card,role,is_robot
 
 ## 附录 C：命令行完整用法
 
+### 安装为命令（推荐）
+
+项目根目录的 `pyproject.toml` 已配好入口，装一次之后就能直接用 `qq-group-overlap` 命令，不必每次设 `PYTHONPATH`：
+
+```bash
+cd qq-group-overlap
+python3 -m pip install .
+```
+
+装好后用 `qq-group-overlap` 和 `qq-group-overlap-gui` 两个命令，效果等同于 `python3 -m qq_group_overlap` / `python3 -m qq_group_overlap.gui`。如果暂时不想安装，也可以直接用下文的 `PYTHONPATH=src` 写法，不必安装也能跑。
+
+> **Windows 用户**：用 `python -m pip install .`（注意 Windows 上是 `python` 不是 `python3`），装好后命令名相同。
+
 ### 分析你选定的群
 
 ```bash
 PYTHONPATH=src python3 -m qq_group_overlap analyze members.private.json \
   -o report \
   --groups 10001,10002,10003 \
-  --exclude-users 你自己的QQ号
+  --exclude-users 88888888,66666666
 ```
 
 常用参数：
 
 - `--min-groups 3`：只显示至少出现在 3 个群的人。
-- `--exclude-users 123,456`：排除自己、熟知机器人等 QQ 号。
+- `--exclude-users 123,456`：排除指定的 QQ 号，常用于排除你认识的机器人或不想出现在结果里的熟人（`live` 命令会自动排除当前登录的自己）。
 - `--include-bots`：默认过滤标记为机器人的成员；加此参数则保留。
 - `--mask-ids`：生成便于分享的脱敏报告，例如 `123***789`。
 - `--limit 50`：Markdown 只展示前 50 人；CSV 仍保留全部结果。
@@ -296,13 +379,9 @@ Token 只从环境变量读取，不会写入快照。`*.private.json`、`snapsh
 ./scripts/run-live-report.sh --groups 10001,10002,10003
 ```
 
-本地 NapCat 启动入口是：
+> **注意**：`scripts/start-napcat.sh` 是本项目作者本机的专用部署脚本（基于 AppImage 解包 + bubblewrap 沙箱），依赖 `runtime/` 下的文件，**不随仓库分发，普通用户无法直接运行**。请按前文 [第二步](#第二步下载并安装-napcat) 用官方方式安装 NapCat。
 
-```bash
-./scripts/start-napcat.sh
-```
-
-本机 WebUI 地址是 `http://127.0.0.1:6099/webui/`，面板密钥在 NapCat 配置里自行设置。这是 NapCat 本机面板的登录密钥，不是 QQ 密码。
+本机 WebUI 地址是 `http://127.0.0.1:6099/webui?token=XXXX`，面板密钥在 NapCat 配置里自行设置。这是 NapCat 本机面板的登录密钥，不是 QQ 密码。
 
 > **Windows 用户**：上述 `run-live-report.sh` 是 Linux 脚本。Windows 下请改用 GUI（`scripts\start-gui.bat`），或直接运行 `python -m qq_group_overlap live`。
 

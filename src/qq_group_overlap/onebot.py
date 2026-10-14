@@ -11,11 +11,25 @@ class OneBotError(RuntimeError):
     """Raised when a OneBot HTTP action fails."""
 
 
+def _direct_opener() -> urllib.request.OpenerDirector:
+    """Build an opener that bypasses any proxy environment variables.
+
+    NapCat's OneBot endpoint lives on this machine (typically 127.0.0.1). If the
+    user's shell exports http_proxy/https_proxy, urllib would route even these
+    loopback requests through the proxy and the connection would fail (commonly
+    surfacing as a 502). Forcing an empty proxy list keeps loopback traffic
+    direct while leaving the rest of the system untouched.
+    """
+
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
 class OneBotClient:
     def __init__(self, base_url: str, token: str = "", timeout: float = 15):
         self.base_url = base_url.rstrip("/")
         self.token = token
         self.timeout = timeout
+        self._opener = _direct_opener()
 
     @classmethod
     def from_environment(
@@ -33,7 +47,7 @@ class OneBotClient:
         if self.token:
             request.add_header("Authorization", f"Bearer {self.token}")
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            with self._opener.open(request, timeout=self.timeout) as response:
                 payload = json.loads(response.read().decode("utf-8"))
         except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
             raise OneBotError(f"OneBot 请求失败：{exc}") from exc

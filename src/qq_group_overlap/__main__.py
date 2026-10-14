@@ -136,6 +136,15 @@ def main(argv: list[str] | None = None) -> int:
             print(f"已保存 {len(group_ids)} 个群的成员快照：{target}")
             return 0
 
+        input_path = Path(args.input).expanduser()
+        if not input_path.exists():
+            raise InputError(
+                f"找不到输入文件：{input_path}\n"
+                "这个路径通常是成员快照。请先生成它：\n"
+                "  · 从 NapCat 拉取：python -m qq_group_overlap fetch --groups 群号1,群号2 -o 快照.json\n"
+                "  · 或用本机一键模式：python -m qq_group_overlap live\n"
+                "  · 也可以先用示例数据试试：python -m qq_group_overlap analyze examples/members.example.json -o report"
+            )
         memberships = load_memberships(args.input)
         selected_groups = set(_ids(args.groups)) or None
         result = analyze_memberships(
