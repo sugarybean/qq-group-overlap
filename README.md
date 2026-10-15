@@ -231,7 +231,9 @@ set https_proxy=
 
 ### 提示「找不到输入文件：…/members.private.json」
 
-这是**正常现象**，不是程序坏了。`members.private.json` 是成员快照（默认路径 `runtime/data/members.private.json`），记录从 NapCat 拉到的群成员——它**不在仓库里**（`runtime/` 已被 `.gitignore` 排除），所以首次使用必然不存在。
+这是**正常现象**，不是程序坏了。`members.private.json` 是成员快照，记录从 NapCat 拉到的群成员——它**不在仓库里**，首次使用必然不存在，需要你自己生成一次。
+
+默认快照保存在**当前用户的数据目录**（Linux/macOS：`~/.local/share/qq-group-overlap/members.private.json`；Windows：`%APPDATA%\qq-group-overlap\members.private.json`），**与你在哪个目录运行命令无关**，换目录不会丢。也可用 `--snapshot` 指定别的路径。
 
 生成它，任选一种：
 
@@ -273,13 +275,19 @@ NapCat 偶尔因 QQ 版本或网络问题登不上。可换扫码方式、稍等
 
 ## 附录 A：先用示例看效果
 
+示例数据只随仓库提供（`pip install` 后不在安装目录里），所以这条命令要**在你克隆下来的项目目录内**运行：
+
 ```bash
-cd qq-group-overlap
+cd 你克隆的项目目录
 PYTHONPATH=src python3 -m qq_group_overlap analyze \
   examples/members.example.json -o report
 ```
 
-然后打开 `report/report.md`。
+然后打开 `report/report.md`。如果已经 `pip install .` 装成命令了，也可以用你拉取的真实快照代替示例数据：
+
+```bash
+qq-group-overlap analyze 你的快照.json -o report
+```
 
 ## 附录 B：JSON / CSV 输入格式
 
@@ -335,6 +343,8 @@ python3 -m pip install .
 
 ### 分析你选定的群
 
+先用 `fetch` 或 `live` 生成一份成员快照（见下文「通过 OneBot HTTP 生成快照」），再对它分析：
+
 ```bash
 PYTHONPATH=src python3 -m qq_group_overlap analyze members.private.json \
   -o report \
@@ -345,7 +355,7 @@ PYTHONPATH=src python3 -m qq_group_overlap analyze members.private.json \
 常用参数：
 
 - `--min-groups 3`：只显示至少出现在 3 个群的人。
-- `--exclude-users 123,456`：排除指定的 QQ 号，常用于排除你认识的机器人或不想出现在结果里的熟人（`live` 命令会自动排除当前登录的自己）。
+- `--exclude-users 123,456`：排除指定的 QQ 号，常用于排除你认识的机器人或不想出现在结果里的熟人。**注意**：`live` 命令会自动排除当前登录的自己，但 `analyze` 不会——如果你是用 `fetch` 从自己的号拉的数据再 `analyze`，记得加 `--exclude-users 你的QQ号`。
 - `--include-bots`：默认过滤标记为机器人的成员；加此参数则保留。
 - `--mask-ids`：生成便于分享的脱敏报告，例如 `123***789`。
 - `--limit 50`：Markdown 只展示前 50 人；CSV 仍保留全部结果。

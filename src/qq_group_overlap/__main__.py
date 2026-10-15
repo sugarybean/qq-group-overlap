@@ -7,6 +7,7 @@ from pathlib import Path
 from .analyze import analyze_memberships
 from .io import InputError, load_memberships, save_snapshot
 from .onebot import OneBotClient, OneBotError
+from .paths import default_snapshot_path
 from .report import write_reports
 
 
@@ -75,7 +76,11 @@ def build_parser() -> argparse.ArgumentParser:
     _add_connection_arguments(live)
     live.add_argument("--groups", default="", help="群序号、群号或 all；留空则交互选择")
     live.add_argument("--self-id", default="", help="从结果排除的自己 QQ 号；默认自动读取")
-    live.add_argument("--snapshot", default="runtime/data/members.private.json", help="成员快照保存路径")
+    live.add_argument(
+        "--snapshot",
+        default=str(default_snapshot_path()),
+        help="成员快照保存路径（默认在当前用户数据目录，与运行目录无关）",
+    )
     live.add_argument("-o", "--output", default="report", help="报告输出目录")
     live.add_argument("--min-groups", type=int, default=2, help="最少共同群数，默认 2")
     live.add_argument("--include-bots", action="store_true", help="不过滤机器人账号")

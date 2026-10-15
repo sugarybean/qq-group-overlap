@@ -16,6 +16,7 @@ from .gui_support import (
 from .io import InputError, load_memberships, merge_snapshot_groups
 from .models import Membership
 from .onebot import OneBotClient, OneBotError
+from .paths import default_snapshot_path
 from .score import (
     DEFAULT_SCORE_FORMULA,
     SCORE_FORMULA_PRESETS,
@@ -774,8 +775,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="QQ 群同好线索本地 GUI")
     parser.add_argument(
         "--snapshot",
-        default="runtime/data/members.private.json",
-        help="本地成员快照路径",
+        default=str(default_snapshot_path()),
+        help="本地成员快照路径（默认在当前用户数据目录，与运行目录无关）",
     )
     parser.add_argument("--api", default="http://127.0.0.1:3000", help="OneBot HTTP 地址")
     parser.add_argument("--token-env", default="ONEBOT_ACCESS_TOKEN", help="Token 环境变量名")
