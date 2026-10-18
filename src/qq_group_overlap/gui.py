@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import os
 import threading
+import time
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -14,7 +16,16 @@ from .gui_support import (
     write_top_csv,
 )
 from .io import InputError, load_memberships, merge_snapshot_groups
+from .login_window import qr_is_current
 from .models import Membership
+from .napcat_runtime import (
+    ONEBOT_HOST,
+    ONEBOT_PORT,
+    NapCatSession,
+    RuntimeBootstrapError,
+    ensure_runtime,
+    load_or_create_token,
+)
 from .onebot import OneBotClient, OneBotError
 from .paths import default_snapshot_path
 from .score import (
@@ -44,16 +55,30 @@ class OverlapApp(ttk.Frame):
         master: tk.Tk,
         *,
         snapshot_path: Path,
-        api_url: str,
-        token_environment: str,
         timeout: float,
+        integrated: bool = True,
+        api_url: str | None = None,
+        api_token: str | None = None,
+        token_environment: str | None = None,
     ) -> None:
         super().__init__(master, padding=20, style="App.TFrame")
         self.master = master
         self.snapshot_path = snapshot_path
-        self.api_url = api_url
-        self.token_environment = token_environment
         self.timeout = timeout
+        self.integrated = integrated
+        self.api_url = api_url or f"http://{ONEBOT_HOST}:{ONEBOT_PORT}"
+        if api_token:
+            self.api_token = api_token
+        elif not integrated and token_environment:
+            self.api_token = os.environ.get(token_environment, "")
+        else:
+            self.api_token = ""
+        self.token_environment = token_environment
+        self.self_id: str | None = None
+        self._session: NapCatSession | None = None
+        self._login_start_time = 0.0
+        self._progress_pulsing = False
+        self.qr_image = None
 
         self.memberships: list[Membership] = []
         self.groups: list[GroupSummary] = []
@@ -73,20 +98,20 @@ class OverlapApp(ttk.Frame):
         self.min_groups_var = tk.StringVar(value="2")
         self.formula_preset_var = tk.StringVar(value="对数等级（默认）")
         self.formula_var = tk.StringVar(value=DEFAULT_SCORE_FORMULA)
-        self.status_var = tk.StringVar(value="正在读取本地快照…")
+        self.status_var = tk.StringVar(value="正在准备 QQ 连接组件…")
         self.status_color = MUTED
         self.formula_var.trace_add("write", self._formula_changed)
 
         self._configure_window()
         self._configure_styles()
-        self._build_ui()
-        self._bind_shortcuts()
-        self._load_snapshot()
+        self.main_view = ttk.Frame(self, style="App.TFrame")
+        self._build_login_view()
+        self._start_flow()
 
     def _configure_window(self) -> None:
         self.master.title("QQ 群同好线索")
-        self.master.geometry("1320x760")
-        self.master.minsize(980, 640)
+        self.master.geometry("480x600")
+        self.master.minsize(420, 560)
         self.master.configure(background=PAPER)
         self.pack(fill="both", expand=True)
 
@@ -111,8 +136,281 @@ class OverlapApp(ttk.Frame):
         style.configure("Treeview.Heading", background="#ECEAE3", foreground=INK, bordercolor=BORDER, font=("TkDefaultFont", 9, "bold"), padding=(6, 6))
         style.map("Treeview", background=[("selected", ACCENT)], foreground=[("selected", "#FFFFFF")])
 
-    def _build_ui(self) -> None:
-        header = ttk.Frame(self, style="App.TFrame")
+    # -- login / bootstrap flow -------------------------------------------
+
+    def _build_login_view(self) -> None:
+        self.login_view = ttk.Frame(self, padding=28, style="App.TFrame")
+        self.login_view.pack(fill="both", expand=True)
+
+        ttk.Label(self.login_view, text="QQ 群同好线索", style="Title.TLabel").pack(anchor="w")
+        self.login_subtitle = ttk.Label(
+            self.login_view,
+            text="首次使用会自动下载并启动 QQ 连接组件（NapCat）。准备好后用手机 QQ 扫码登录。",
+            style="Subtitle.TLabel",
+        )
+        self.login_subtitle.pack(anchor="w", pady=(4, 16))
+
+        self.login_status = ttk.Label(
+            self.login_view,
+            text="正在准备 QQ 连接组件…",
+            style="Panel.TLabel",
+            wraplength=400,
+            justify="left",
+        )
+        self.login_status.pack(anchor="w", pady=(0, 8))
+        self.login_progress = ttk.Progressbar(
+            self.login_view, orient="horizontal", length=380, mode="indeterminate"
+        )
+        self.login_progress.pack(fill="x", pady=(0, 16))
+
+        self.qr_panel = tk.Frame(
+            self.login_view,
+            width=320,
+            height=320,
+            background=PANEL,
+            highlightbackground=BORDER,
+            highlightthickness=1,
+        )
+        self.qr_panel.pack()
+        self.qr_panel.pack_propagate(False)
+        self.qr_label = tk.Label(
+            self.qr_panel,
+            text="正在等待二维码…",
+            background=PANEL,
+            foreground=MUTED,
+            font=("TkDefaultFont", 11),
+        )
+        self.qr_label.pack(fill="both", expand=True, padx=12, pady=12)
+
+        self.login_note = ttk.Label(
+            self.login_view,
+            text="二维码只在本机显示，不会写入任何报告。",
+            style="Hint.TLabel",
+        )
+        self.login_note.pack(anchor="w", pady=(14, 10))
+
+        btn_row = ttk.Frame(self.login_view, style="App.TFrame")
+        btn_row.pack(fill="x", pady=(8, 0))
+        self.retry_button = ttk.Button(
+            btn_row, text="重试", command=self._retry, style="Secondary.TButton"
+        )
+        self.retry_button.pack(side="right")
+        self.retry_button.pack_forget()
+        ttk.Button(
+            btn_row,
+            text="退出",
+            command=self.master.destroy,
+            style="Secondary.TButton",
+        ).pack(side="right", padx=(0, 8))
+
+    def _start_flow(self) -> None:
+        if self.integrated:
+            self._set_login_status("正在准备 QQ 连接组件（首次使用会下载 NapCat）…")
+            threading.Thread(target=self._bootstrap_worker, daemon=True).start()
+        else:
+            # 连接到已运行的 NapCat：跳过下载 / 扫码，直接进入主界面
+            self._enter_main_view()
+
+    def _bootstrap_worker(self) -> None:
+        try:
+            ensure_runtime(
+                progress=lambda msg, frac: self.master.after(
+                    0, self._report_progress, msg, frac
+                ),
+                base=None,
+            )
+        except RuntimeBootstrapError as exc:
+            self.master.after(0, self._login_failed, f"无法准备 QQ 连接组件：{exc}")
+            return
+
+        token = load_or_create_token()
+        self.api_token = token
+        session = NapCatSession(
+            token,
+            base=None,
+            log=lambda msg: self.master.after(0, self._report_progress, msg, None),
+        )
+        try:
+            session.start()
+        except RuntimeBootstrapError as exc:
+            self.master.after(0, self._login_failed, f"无法启动 QQ 连接组件：{exc}")
+            return
+
+        self._session = session
+        self._login_start_time = time.time()
+        # 复用上次的登录状态：若已登录则直接进入主界面，无需再次扫码
+        try:
+            uin = session.current_uin()
+        except Exception:
+            uin = None
+        if uin:
+            self.master.after(0, self._on_logged_in, uin)
+            return
+        self.master.after(0, self._begin_scan_phase)
+
+    def _begin_scan_phase(self) -> None:
+        self.login_subtitle.configure(
+            text="请用手机 QQ 扫描下方二维码登录；扫码确认的账号将作为分析基准。"
+        )
+        self.login_progress.pack_forget()
+        self.qr_label.configure(text="正在生成二维码…")
+        self.login_note.configure(
+            text="二维码只在本机显示，不会写入任何报告。登录成功后自动进入分析界面。"
+        )
+        self._poll_login()
+
+    def _poll_login(self) -> None:
+        session = self._session
+        if session is None:
+            return
+        if not session.is_running():
+            self._login_failed("QQ 连接组件在登录前退出，请点「重试」。")
+            return
+        uin = session.current_uin()
+        if uin:
+            self._on_logged_in(uin)
+            return
+        qr_path = session.qr_path
+        if qr_is_current(qr_path, not_before=self._login_start_time):
+            try:
+                self._display_qr(qr_path)
+            except (OSError, tk.TclError):
+                self.login_status.configure(text="二维码正在写入，请稍候…")
+        else:
+            self.login_status.configure(text="正在生成二维码，请稍候…")
+        self.master.after(500, self._poll_login)
+
+    def _display_qr(self, path: Path) -> None:
+        image = tk.PhotoImage(file=str(path))
+        if image.width() <= 160 and image.height() <= 160:
+            image = image.zoom(2, 2)
+        self.qr_image = image
+        self.qr_label.configure(image=image, text="")
+        self.login_status.configure(text="二维码已就绪，请用手机 QQ 扫码；确认后自动进入。")
+
+    def _report_progress(self, message: str, fraction: float | None) -> None:
+        if not hasattr(self, "login_status"):
+            return
+        self.login_status.configure(text=message)
+        if fraction is None:
+            if not self._progress_pulsing:
+                self.login_progress.configure(mode="indeterminate")
+                self.login_progress.start(20)
+                self._progress_pulsing = True
+        else:
+            if self._progress_pulsing:
+                self.login_progress.stop()
+                self._progress_pulsing = False
+            self.login_progress.configure(mode="determinate", maximum=1.0, value=fraction)
+
+    def _on_logged_in(self, uin: str) -> None:
+        self.self_id = uin
+        self.excluded_users = {uin}
+        if self._session is not None:
+            self.api_url = self._session.api_url
+        if hasattr(self, "login_view"):
+            self.login_view.destroy()
+            self.login_view = None
+        self._enter_main_view()
+
+    def _enter_main_view(self) -> None:
+        if hasattr(self, "login_view") and self.login_view is not None:
+            self.login_view.destroy()
+            self.login_view = None
+        self.master.geometry("1320x760")
+        self.master.minsize(980, 640)
+        self.main_view.pack(fill="both", expand=True)
+        self._build_ui(self.main_view)
+        self._bind_shortcuts()
+        self._load_snapshot()
+        self._populate_groups_from_qq()
+        if self.self_id:
+            self._set_status(
+                f"已登录 QQ {self.self_id}（已自动排除你的账号）。"
+                "选群后点「只刷新已选群等级」即可拉取成员并出结果。"
+            )
+        else:
+            self._set_status(
+                "已连接 QQ 连接组件。选群后点「只刷新已选群等级」即可拉取成员并出结果。"
+            )
+
+    def _populate_groups_from_qq(self) -> None:
+        def worker() -> None:
+            try:
+                client = OneBotClient(self.api_url, self.api_token, self.timeout)
+                self_id = client.get_login_user_id()
+                available = client.list_groups()
+            except (OneBotError, OSError) as exc:
+                self.master.after(
+                    0,
+                    lambda: self._set_status(
+                        f"无法获取你的群列表：{exc}（可稍后再试）", kind="warning"
+                    ),
+                )
+                return
+            self.master.after(0, self._set_self_id, self_id)
+            self.master.after(0, self._merge_catalog, available)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _set_self_id(self, uin: str) -> None:
+        self.self_id = uin
+        self.excluded_users = {uin}
+
+    def _merge_catalog(self, available: list[dict[str, object]]) -> None:
+        existing = {group.group_id: group for group in self.groups}
+        merged: list[GroupSummary] = []
+        for item in available:
+            group_id = str(item.get("group_id") or "")
+            if not group_id:
+                continue
+            name = str(item.get("group_name") or group_id)
+            try:
+                member_count = int(item.get("member_count") or 0)
+            except (TypeError, ValueError):
+                member_count = 0
+            previous = existing.pop(group_id, None)
+            if previous is not None:
+                merged.append(
+                    GroupSummary(group_id, name, member_count, previous.level_count)
+                )
+            else:
+                merged.append(GroupSummary(group_id, name, member_count, 0))
+        merged.extend(existing.values())
+        merged.sort(key=lambda group: (group.group_name.casefold(), group.group_id))
+        self.groups = merged
+        self._refresh_group_tree()
+        self._update_selection_labels()
+
+    def _set_login_status(self, message: str) -> None:
+        if hasattr(self, "login_status"):
+            self.login_status.configure(text=message)
+
+    def _login_failed(self, message: str) -> None:
+        self._progress_pulsing = False
+        if hasattr(self, "login_progress"):
+            try:
+                self.login_progress.stop()
+            except Exception:
+                pass
+        if hasattr(self, "login_status"):
+            self.login_status.configure(text=f"出错了：{message}")
+        if hasattr(self, "qr_label"):
+            self.qr_label.configure(image="", text="准备失败，可点「重试」。")
+        if hasattr(self, "retry_button"):
+            self.retry_button.pack(side="right")
+
+    def _retry(self) -> None:
+        if hasattr(self, "retry_button"):
+            self.retry_button.pack_forget()
+        self._progress_pulsing = False
+        self._set_login_status("正在准备 QQ 连接组件…")
+        self.login_progress.configure(mode="indeterminate")
+        self.login_progress.pack(fill="x", pady=(0, 16))
+        threading.Thread(target=self._bootstrap_worker, daemon=True).start()
+
+    def _build_ui(self, parent: ttk.Frame) -> None:
+        header = ttk.Frame(parent, style="App.TFrame")
         header.pack(fill="x", pady=(0, 16))
         ttk.Label(header, text="QQ 群同好线索", style="Title.TLabel").pack(anchor="w")
         ttk.Label(
@@ -121,7 +419,7 @@ class OverlapApp(ttk.Frame):
             style="Subtitle.TLabel",
         ).pack(anchor="w", pady=(4, 0))
 
-        body = ttk.Panedwindow(self, orient="horizontal")
+        body = ttk.Panedwindow(parent, orient="horizontal")
         body.pack(fill="both", expand=True)
 
         left = ttk.Frame(body, padding=16, style="Panel.TFrame")
@@ -132,7 +430,7 @@ class OverlapApp(ttk.Frame):
         self._build_result_panel(right)
 
         status = tk.Label(
-            self,
+            parent,
             textvariable=self.status_var,
             anchor="w",
             background=PAPER,
@@ -677,11 +975,7 @@ class OverlapApp(ttk.Frame):
 
         def worker() -> None:
             try:
-                client = OneBotClient.from_environment(
-                    self.api_url,
-                    self.token_environment,
-                    self.timeout,
-                )
+                client = OneBotClient(self.api_url, self.api_token, self.timeout)
                 self_id = client.get_login_user_id()
                 groups = client.fetch_groups(selected_ids)
                 merge_snapshot_groups(self.snapshot_path, groups)
@@ -706,8 +1000,9 @@ class OverlapApp(ttk.Frame):
         concise = message.replace("\n", " ")[:360]
         self._set_status("刷新失败；本地快照没有被改动。", kind="error")
         messagebox.showerror(
-            "无法连接 NapCat",
-            f"{concise}\n\n请先运行 ./scripts/start-napcat.sh，确认 QQ 已登录，再重试。",
+            "无法连接 QQ 连接组件",
+            f"{concise}\n\n若这是首次使用，请确认网络可以访问 GitHub 以下载组件；"
+            "若组件已就绪，请关闭本窗口后重新打开本程序再试。",
             parent=self.master,
         )
 
@@ -778,8 +1073,21 @@ def build_parser() -> argparse.ArgumentParser:
         default=str(default_snapshot_path()),
         help="本地成员快照路径（默认在当前用户数据目录，与运行目录无关）",
     )
-    parser.add_argument("--api", default="http://127.0.0.1:3000", help="OneBot HTTP 地址")
-    parser.add_argument("--token-env", default="ONEBOT_ACCESS_TOKEN", help="Token 环境变量名")
+    parser.add_argument(
+        "--api",
+        default=None,
+        help="连接到已运行的 OneBot 地址；不传则自动下载并启动 NapCat（默认 127.0.0.1:3000）",
+    )
+    parser.add_argument(
+        "--token",
+        default=None,
+        help="OneBot 访问令牌（配合 --api 使用；不传则自动生成）",
+    )
+    parser.add_argument(
+        "--token-env",
+        default="ONEBOT_ACCESS_TOKEN",
+        help="从环境变量读取令牌名（配合 --api 使用）",
+    )
     parser.add_argument("--timeout", type=float, default=20, help="OneBot 请求超时秒数")
     return parser
 
@@ -791,9 +1099,11 @@ def main(argv: list[str] | None = None) -> int:
     OverlapApp(
         root,
         snapshot_path=snapshot,
-        api_url=args.api,
-        token_environment=args.token_env,
         timeout=args.timeout,
+        integrated=args.api is None,
+        api_url=args.api,
+        api_token=args.token,
+        token_environment=args.token_env,
     )
     root.mainloop()
     return 0
