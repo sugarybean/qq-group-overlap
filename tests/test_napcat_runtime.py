@@ -1,20 +1,26 @@
 from __future__ import annotations
 
 import json
+import shutil
 import stat
+import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
 from qq_group_overlap.napcat_runtime import (
     NapCatSession,
     RuntimeBootstrapError,
+    _bootstrap_windows,
     linux_launcher,
     load_or_create_token,
     napcat_home,
     pick_asset,
+    runtime_dir,
     runtime_ready,
+    windows_shell_dir,
     write_napcat_config,
 )
 
@@ -26,6 +32,7 @@ LINUX_ASSETS = [
 WINDOWS_ASSETS = [
     {"name": "NapCat.Framework.zip", "browser_download_url": "u-fw"},
     {"name": "NapCat.Shell.Windows.OneKey.zip", "browser_download_url": "u-onekey"},
+    {"name": "NapCat.Shell.Windows.Node.zip", "browser_download_url": "u-node"},
 ]
 
 
@@ -34,8 +41,11 @@ class AssetPickTests(unittest.TestCase):
         self.assertEqual(pick_asset(LINUX_ASSETS, "linux-amd64"), (LINUX_ASSETS[0]["name"], "u-amd"))
         self.assertEqual(pick_asset(LINUX_ASSETS, "linux-arm64"), (LINUX_ASSETS[1]["name"], "u-arm"))
 
-    def test_picks_windows_onekey(self) -> None:
-        self.assertEqual(pick_asset(WINDOWS_ASSETS, "windows-amd64"), ("NapCat.Shell.Windows.OneKey.zip", "u-onekey"))
+    def test_picks_windows_node(self) -> None:
+        self.assertEqual(
+            pick_asset(WINDOWS_ASSETS, "windows-amd64"),
+            ("NapCat.Shell.Windows.Node.zip", "u-node"),
+        )
 
     def test_raises_when_platform_asset_missing(self) -> None:
         with self.assertRaises(RuntimeBootstrapError):
@@ -112,6 +122,41 @@ class SessionTests(unittest.TestCase):
     def test_stop_is_safe_when_never_started(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             NapCatSession("token", Path(td)).stop()
+
+
+class WindowsBootstrapTests(unittest.TestCase):
+    def test_windows_shell_dir_finds_bat_at_node_root(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            shell = runtime_dir(base) / "node"
+            shell.mkdir(parents=True)
+            (shell / "napcat.bat").write_text("@echo off\n", encoding="utf-8")
+            with patch("sys.platform", "win32"):
+                self.assertTrue(runtime_ready(base))
+                self.assertEqual(windows_shell_dir(base), shell)
+
+    def test_bootstrap_downloads_and_extracts_node_package(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            zip_path = Path(td) / "NapCat.Shell.Windows.Node.zip"
+            with zipfile.ZipFile(zip_path, "w") as zf:
+                zf.writestr("napcat.bat", "@echo off\n")
+                zf.writestr("node.exe", "PE-bin")
+            def fake_download(_url: str, dest: Path, _progress=None) -> Path:
+                shutil.copy(zip_path, dest)
+                return dest
+            with patch("sys.platform", "win32"), patch(
+                "qq_group_overlap.napcat_runtime.download", fake_download
+            ):
+                _bootstrap_windows(
+                    "u-node", "NapCat.Shell.Windows.Node.zip", None, base
+                )
+            self.assertTrue(
+                (runtime_dir(base) / "node" / "napcat.bat").is_file()
+            )
+            self.assertEqual(
+                windows_shell_dir(base), runtime_dir(base) / "node"
+            )
 
 
 if __name__ == "__main__":

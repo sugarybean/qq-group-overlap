@@ -5,15 +5,19 @@ NapCat install, no WebUI visit, no token copying.
 
 Layout inside the per-user data directory (see paths.default_data_dir):
 
-    napcat/            downloaded runtime (AppImage + squashfs-root, or OneKey dir)
+    napcat/            downloaded runtime (AppImage + squashfs-root, or all-in-one Node package)
     napcat-home/       isolated NapCat home; NAPCAT_WORKDIR points here, so
                        config lands in napcat-home/config and the login QR in
                        napcat-home/cache/qrcode.png
     napcat-token.txt   self-generated OneBot token, reused across runs
 
 Linux uses the official NapCat AppImage (NapNeko/NapCatAppImageBuild). Windows
-uses the official OneKey installer (NapNeko/NapCatQQ), which downloads QQ and
-NapCat itself; we then launch the generated napcat.bat.
+uses the official all-in-one package NapCat.Shell.Windows.Node.zip (NapCat
+Shell + QQ runtime + portable Node.js, self-contained, no installer). We
+download it with our own mirror-fallback + resume + integrity-check logic and
+launch napcat.bat directly — the OneKey installer is deliberately bypassed
+because its internal GitHub downloads cannot use our mirrors and truncate on
+flaky networks.
 """
 
 from __future__ import annotations
@@ -145,34 +149,58 @@ def pick_asset(assets: list[dict[str, Any]], key: str) -> tuple[str, str]:
         if key.startswith("linux") and name.startswith("QQ-"):
             if name.endswith(f"-{key.split('-', 1)[1]}.AppImage"):
                 return named(name, url)
-        if key.startswith("windows") and name == "NapCat.Shell.Windows.OneKey.zip":
+        if key.startswith("windows") and name == "NapCat.Shell.Windows.Node.zip":
             return named(name, url)
     raise RuntimeBootstrapError(f"发布页里找不到适合当前平台（{key}）的 NapCat 包")
 
 
-def download(url: str, dest: Path, progress: Progress | None = None) -> Path:
-    """Download url to dest, trying GitHub directly then mirror prefixes."""
+class _DownloadCorrupt(Exception):
+    """The downloaded file failed its integrity check; try the next mirror."""
 
+
+def download(url: str, dest: Path, progress: Progress | None = None) -> Path:
+    """Download url to dest, trying GitHub directly then mirror prefixes.
+
+    Supports resuming across mirrors: a partially downloaded ``.part`` file is
+    continued with an HTTP Range request, and a corrupt/truncated file is
+    detected and retried from the next mirror instead of being left in place.
+    """
+
+    part = dest.with_suffix(dest.suffix + ".part")
     last_error: Exception | None = None
     for mirror in DOWNLOAD_MIRRORS:
         candidate = f"{mirror}{url}" if mirror else url
         try:
-            return _download_once(candidate, dest, progress)
-        except (OSError, urllib.error.URLError) as exc:
+            return _download_once(candidate, dest, part, progress)
+        except (OSError, urllib.error.URLError, _DownloadCorrupt) as exc:
             last_error = exc
             if progress:
-                progress("直连失败，尝试镜像加速…", None)
+                progress("下载中断或校验失败，换源重试…", None)
+    try:
+        part.unlink(missing_ok=True)
+    except OSError:
+        pass
     raise RuntimeBootstrapError(f"下载 NapCat 失败：{last_error}")
 
 
-def _download_once(url: str, dest: Path, progress: Progress | None) -> Path:
+def _download_once(url: str, dest: Path, part: Path, progress: Progress | None) -> Path:
     dest.parent.mkdir(parents=True, exist_ok=True)
-    tmp = dest.with_suffix(dest.suffix + ".part")
-    request = urllib.request.Request(url, headers={"User-Agent": "qq-group-overlap"})
+    existing = part.stat().st_size if part.exists() else 0
+    headers = {"User-Agent": "qq-group-overlap"}
+    if existing:
+        headers["Range"] = f"bytes={existing}-"
+    request = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(request, timeout=60) as response:
-        total = int(response.headers.get("Content-Length") or 0)
-        received = 0
-        with tmp.open("wb") as out:
+        status = getattr(response, "status", response.getcode())
+        if status == 206:
+            total = existing + int(response.headers.get("Content-Length") or 0)
+            mode = "ab"
+        else:
+            total = int(response.headers.get("Content-Length") or 0)
+            existing = 0
+            mode = "wb"
+        received = existing
+        with part.open(mode) as out:
             while True:
                 block = response.read(CHUNK)
                 if not block:
@@ -187,7 +215,18 @@ def _download_once(url: str, dest: Path, progress: Progress | None) -> Path:
                         )
                     else:
                         progress(f"下载 NapCat 中… {received // 1048576} MB", None)
-    tmp.replace(dest)
+    # Integrity check catches the truncated downloads that broke the OneKey
+    # installer path on flaky networks. Only zip archives are verified.
+    if dest.suffix.lower() == ".zip":
+        try:
+            bad = zipfile.ZipFile(part).testzip()
+        except (zipfile.BadZipFile, OSError) as exc:
+            part.unlink(missing_ok=True)
+            raise _DownloadCorrupt(f"压缩包损坏或下载不完整：{exc}") from exc
+        if bad is not None:
+            part.unlink(missing_ok=True)
+            raise _DownloadCorrupt(f"压缩包内文件损坏：{bad}")
+    part.replace(dest)
     return dest
 
 
@@ -201,13 +240,15 @@ def linux_launcher(base: Path | None = None) -> Path:
 
 
 def windows_shell_dir(base: Path | None = None) -> Path | None:
-    root = runtime_dir(base) / "onekey"
+    root = runtime_dir(base) / "node"
     if not root.is_dir():
         return None
-    for child in sorted(root.iterdir()):
-        if child.is_dir() and child.name.startswith("NapCat") and "Shell" in child.name:
-            if (child / "napcat.bat").is_file():
-                return child
+    bat = root / "napcat.bat"
+    if bat.is_file():
+        return root
+    for found in sorted(root.rglob("napcat.bat")):
+        if found.is_file():
+            return found.parent
     return None
 
 
@@ -270,23 +311,19 @@ def _bootstrap_linux(
 def _bootstrap_windows(
     url: str, name: str, progress: Progress | None, base: Path | None
 ) -> None:
-    root = runtime_dir(base) / "onekey"
+    root = runtime_dir(base) / "node"
+    # discard any stale OneKey installation left by older versions
+    stale = runtime_dir(base) / "onekey"
+    if stale.is_dir():
+        shutil.rmtree(stale, ignore_errors=True)
     root.mkdir(parents=True, exist_ok=True)
     archive = download(url, root / name, progress)
+    if progress:
+        progress("解压 NapCat 运行时…", None)
     with zipfile.ZipFile(archive) as zf:
         zf.extractall(root)
-    installer = next(root.rglob("NapCatInstaller.exe"), None)
-    if installer is None:
-        raise RuntimeBootstrapError("OneKey 包里没有找到 NapCatInstaller.exe")
-    if progress:
-        progress("正在运行 NapCat 安装器（它会自动下载 QQ，请稍候）…", None)
-    subprocess.Popen([str(installer)], cwd=installer.parent)
-    deadline = time.monotonic() + 1800
-    while time.monotonic() < deadline:
-        if windows_shell_dir(base) is not None:
-            return
-        time.sleep(3)
-    raise RuntimeBootstrapError("等待 NapCat 安装器完成超时")
+    if windows_shell_dir(base) is None:
+        raise RuntimeBootstrapError("解压后找不到 napcat.bat，安装失败")
 
 
 # ---------------------------------------------------------------------------
